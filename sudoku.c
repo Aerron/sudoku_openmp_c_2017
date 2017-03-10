@@ -1,10 +1,14 @@
+//inclusion files
 #include <stdio.h>
 #include <stdlib.h>
 #include "sudoku.h"
 #include <string.h>
 #include <stdbool.h>
 #include <omp.h>
+
 #define UNASSIGNED 0
+
+//global variables
 bool possiblevalues[SIZE][SIZE][SIZE+1];
 int **zerogrid;
 int stack_sz;
@@ -13,18 +17,23 @@ struct stack* solvedgrid;
 int** originalGrid ;
 struct stack* top;
 struct stack* bottom;
-struct grid{
+
+//structures
+struct grid
+{
     int** my_grid;
     bool** assigned; 
     int** possiblevalues;     
 };
-struct stack{
+struct stack
+{
     struct grid* Grid;
     struct stack* next;
     int row;
     int col;
 };
 
+//functions
 bool isok(int **grid, int row, int col, int num);
 int eliminations(int **grid);
 void twins(int **grid);
@@ -38,24 +47,34 @@ void assign_possiblevalues(int value, struct grid* curr, int i, int j);
 void Sudoku();
 int elimination(struct grid* curr);
 
-bool isok(int **grid, int row, int col, int num){
+// check if the variable num is possible at that row and column in  sudoku(grid)
+bool isok(int **grid, int row, int col, int num)
+{
     //printf("**in isSafe of *** %d %d %d\n",row,col,num);
     int myrow,mycol;
+    
+
     bool alreadyinrow=false;
+    // check every row
     for (mycol = 0; mycol < SIZE; mycol++)
         if (grid[row][mycol] == num)
         {
             alreadyinrow=true;
             mycol=SIZE;
         }
+
+
     bool alreadyincol=false;
+    //check every column
      for (myrow = 0; myrow < SIZE; myrow++)
         if (grid[myrow][col] == num)
         {
             alreadyincol=true;
             myrow=SIZE;
         }
+
     bool alreadyinbox=false;
+    //check every box
     int boxStartRow=row - row % MINIGRIDSIZE;
     int boxStartCol= col - col % MINIGRIDSIZE;
     for (myrow = 0; myrow < MINIGRIDSIZE; myrow++)
@@ -66,15 +85,23 @@ bool isok(int **grid, int row, int col, int num){
                 myrow=MINIGRIDSIZE;
                 mycol=MINIGRIDSIZE;
             }
+            //return true if it is possible at that particular row and column
     return (!alreadyinrow && !alreadyincol && !alreadyinbox);
 }
 
-void Sudoku(){
+
+// Brute force function
+//start taking an element from the stack and then run them each parallely
+void Sudoku()
+{
+    //run each of the stack element parallely
     #pragma omp parallel
     {
+        // do until all the stack elements are emptied
         while ( top && !solved)
         {
             struct stack* curr = NULL;
+            // Lock the stack pop so that only one thread can pop the data structure
             #pragma omp critical
             {
                 if (top!=NULL)
@@ -84,6 +111,7 @@ void Sudoku(){
             }
             bool cond=false;
             int i,j;
+            // find the next grid box element which isn't assigned
             for (i = curr->row ; i < SIZE; i++)
             {
                 for (j = 0 ; j <SIZE; j++){
@@ -97,17 +125,22 @@ void Sudoku(){
                     }
                 }
             }
+            // if there exist the unassigned numbers in the sudoku puzzle execute
             if (curr && cond)
             {
                 int num;
+                // note all the possible values in the test
                 int test = curr->Grid->possiblevalues[curr->row][curr->col];
 
+                // for each possible value in the box element grid enter to the loop
                 for ( num = 1; num <= SIZE ; num++)
                 {
                     if (!solved && (test & (1 << (num - 1))))
                     {
+                        // create a new data structure for each of the possible values by assigning the values to that box element
                         struct stack* mystack = stackalloc(curr->row, curr->col);
                         int i,j;
+                        // copy the values of the parent grid data structure to the child data structure
                         for ( i =0 ; i < SIZE ; i++)
                         {
                             for (j = 0 ; j < SIZE ; j++)
@@ -117,18 +150,22 @@ void Sudoku(){
                                 mystack->Grid->possiblevalues[i][j]= curr->Grid->possiblevalues[i][j];
                             }
                         }
+                        //  now assign the newly possible elements for each of the box element
                         assign_possiblevalues(num, mystack->Grid,mystack->row, mystack->col);
                         if (!solved && elimination(mystack->Grid) == 0){
                             if (!solved &&  isValid(zerogrid,mystack->Grid->my_grid))
                             {
+                                // if the sudoku grid is solved then make the solved value to true
                                 #pragma omp critical
                                 {
-                                    if (!solved){
+                                    if (!solved)
+                                    {
                                         solvedgrid = mystack;
                                         solved = true;
                                     }
                                 }
                             }
+                            // push an element to the stack bottom and while pushing lock it so that no other thread 
                             #pragma omp critical
                             {
                                 push(mystack);
@@ -137,6 +174,7 @@ void Sudoku(){
                     }
                 }
             }
+            // delete the stack element after the child process are created
             if ( curr!=NULL)
                 deletestack(curr);
         }
@@ -144,22 +182,36 @@ void Sudoku(){
     return;
 }
 
-void stackinit(int** Grid, struct grid* curr){
+// assigning values to the stack
+void stackinit(int** Grid, struct grid* curr)
+{
     int i,j;
+
+    // int values to store the possible values in the virtual binary form
     int* row = (int*) malloc (SIZE*sizeof (int));
     int* column = (int*) malloc (SIZE*sizeof (int));
     int* box = (int*) malloc (SIZE*sizeof (int));
+
+    // initialising each with 0
     for(i=0;i<SIZE;i++){
             row[i]=0;
             column[i]=0;
             box[i]=0;
     }
-    for( i = 0; i < SIZE ; i++){
-        for ( j = 0 ; j < SIZE ; j++){
+
+    // loop to find the virtual binary values of columns, rows and box
+    for( i = 0; i < SIZE ; i++)
+    {
+        for ( j = 0 ; j < SIZE ; j++)
+        {
+            // assigning the values to the new data structure
             curr->my_grid[i][j] = Grid[i][j];
+            // enter the loop if we have an assigned number
             if ( Grid[i][j] != 0){
+                // find the virtual binary value of that particular number
                 int k = 1 << ( Grid[i][j] - 1);
                 curr->assigned[i][j] = 1;
+                // adding it to the virtual row and column and box i.e saying that it is occured in that box,row,column
                 row[i] |= k;
                 column[j] |= k;
                 box[(i/MINIGRIDSIZE)*MINIGRIDSIZE + j/MINIGRIDSIZE] |= k;
@@ -167,66 +219,92 @@ void stackinit(int** Grid, struct grid* curr){
         }
     }
 
-    for( i = 0; i < SIZE ; i++){
-        for ( j = 0 ; j < SIZE ; j++){
-            if ( curr->assigned[i][j] == 0){
+    // now going to each of the subbox box and assigning the possible values of that particular subbox
+    for( i = 0; i < SIZE ; i++)
+    {
+        for ( j = 0 ; j < SIZE ; j++)
+        {
+            // if it isn't assigned then find the possible values using the row,column,box value of that particular column values
+            if ( curr->assigned[i][j] == 0)
+            {
+                // finally store the values that are possible in that particular subbox
                 int temp = row[i] | column[j] | box[(i/MINIGRIDSIZE)*MINIGRIDSIZE + j/MINIGRIDSIZE] ;
                 temp = ~temp;
+
+                // and now filrtering them to make it to the required digits
                 temp &= ((1 << SIZE) - 1);
                 curr->possiblevalues[i][j] = temp;
             }
-            else{
+            else
+            {
+                //if it is assigned the make the possible to 0
                 curr->possiblevalues[i][j] = 0;
             }
         }
     }
 }
 
-void push(struct stack* newelement){
-    if ( !top){
+// to push the element to stack from the bottom
+void push(struct stack* newelement)
+{
+
+    if ( !top)
+    {
         //no elements in the stack
         top = newelement;
         top->next = NULL;
         bottom = newelement;
     }
-    else{
+    else
+    {
         bottom->next = newelement;
         bottom = newelement;
     }
 }
 
-struct stack* pop(){
-    if (top){
+// pop the data structure at the top
+struct stack* pop()
+{
+    if (top)
+    {
         struct stack* ret = top;
         top = top->next;
         return ret;
     }
-    else{
+    else
+    {
         printf("error:trying to pop off from an empty stack\n");
         exit(0);
     }
 }
 
-struct stack* stackalloc(int myrow, int mycol){
+// Dynamic allocation for the data
+struct stack* stackalloc(int myrow, int mycol)
+{
     struct stack* mystack;
     mystack = malloc(sizeof(struct stack));
     mystack->Grid = malloc(sizeof(struct grid));
     int row,col;
     mystack->Grid->my_grid = (int**)malloc(SIZE*sizeof(int*));
-    for (row=0; row<SIZE; row++){
+    for (row=0; row<SIZE; row++)
+    {
         mystack->Grid->my_grid[row] = (int*) malloc (SIZE * sizeof (int));
     }
     mystack->Grid->possiblevalues = (int**)malloc(SIZE*sizeof(int*));
-    for (row=0; row<SIZE; row++){
+    for (row=0; row<SIZE; row++)
+    {
         mystack->Grid->possiblevalues[row] = (int*) malloc (SIZE*sizeof (int));
         for (col=0;col<SIZE;col++){
             mystack->Grid->possiblevalues[row][col] = 0;
         }
     }
     mystack->Grid->assigned = (bool**)malloc(SIZE*sizeof(bool*));
-    for (row=0; row<SIZE; row++){
+    for (row=0; row<SIZE; row++)
+    {
         mystack->Grid->assigned[row] = (bool*) malloc (SIZE*sizeof (bool));
-        for (col=0;col<SIZE;col++){
+        for (col=0;col<SIZE;col++)
+        {
+            //initialise the grid values to zero
             mystack->Grid->assigned[row][col] = 0;
         }
     }
@@ -236,6 +314,7 @@ struct stack* stackalloc(int myrow, int mycol){
     return mystack;
 }
 
+// to free the stack the data structure
 void deletestack(struct stack* mystack){
     int i;
     for (i = 0; i < SIZE; i++) 
@@ -250,13 +329,13 @@ void deletestack(struct stack* mystack){
     free(mystack);
 }
 
+// the trick implementation of twins
 void twins(int **grid)
 {
     
-    int row,col;
-    for (row = 0; row < SIZE; row++)
+    for (int row = 0; row < SIZE; row++)
     {
-        for (col=0; col<SIZE; col++)
+        for (int col=0; col<SIZE; col++)
         {
               int nonzero=0;
               int t;
@@ -337,8 +416,11 @@ void twins(int **grid)
               }
         }
      }
-    for (col = 0; col < SIZE; col++){
-        for (row=0; row<SIZE; row++){
+ 
+
+   
+    for (int col = 0; col < SIZE; col++){
+        for (int row=0; row<SIZE; row++){
               int nonzero=0;
               int t;
               for(t=1;t<SIZE+1;t++){
@@ -417,107 +499,23 @@ void twins(int **grid)
               }
         }
      }
-
-    return;
-}
-
-void triplets(int **grid){
-    int row,col;
-    for (row = 0; row < SIZE; row++){
-                for (col=0; col<SIZE; col++){
-                      int nonzero=0;
-                      int t;
-                      for(t=1;t<SIZE+1;t++){
-                        if(possiblevalues[row][col][t])nonzero++;
-                      }
-                      if(nonzero>=3){
-                            //atleast two possible values
-                            //printf("two possible values for row,col %d,%d\n",row,col);
-                            //select all possible pairs of twins from these possible values
-                            int nonzero_possible[SIZE];
-                            int nonzero_index=0;
-                            int j;
-                            for(j=1;j<=SIZE;j++){
-                                 if(possiblevalues[row][col][j]){
-                                    nonzero_possible[nonzero_index]=j;
-                                    nonzero_index++;
-                                 }
-                             }
-                             //printf("nonzero_possible values\n");
-                             //for(j=0;j<nonzero_index;j++){
-                                 //printf("%d ",nonzero_possible[j]);
-                             //}
-                             //printf("\n");
-                             
-                             int p,q,r;
-                            for(p=0;p<nonzero_index-2;p++){
-                                int triplet1=nonzero_possible[p];
-                                for(q=p+1;q<nonzero_index-1;q++){
-                                    int triplet2=nonzero_possible[q];
-                                    for(r=q+1;r<nonzero_index;r++){
-                                         int triplet3=nonzero_possible[r];
-                                            //printf("triplets:%d,%d,%d\n",triplet1,triplet2 );
-                                            int index=0;
-                                            int nxtcol=0;
-                                            int uniquecol;
-                                            for(;nxtcol<SIZE;nxtcol++){
-                                                 if(nxtcol!=col){
-                                                     //printf("checking col %d\n",nxtcol);
-                                                     int i;
-                                                     bool istriplet1=false;
-                                                     bool istriplet2=false;
-                                                     bool istriplet3=false;
-                                                     for(i=0;i<SIZE;i++){
-                                                        if(possiblevalues[row][nxtcol][triplet1])istriplet1=true;
-                                                        if(possiblevalues[row][nxtcol][triplet2])istriplet2=true;
-                                                         if(possiblevalues[row][nxtcol][triplet3])istriplet3=true;
-                                                     }
-                                                     if(istriplet1 && istriplet2 && istriplet3){
-                                                        //triplets exist in another cell
-                                                        //printf("triplets found in col %d\n",nxtcol);
-                                                        index++;
-                                                        uniquecol=nxtcol;
-                                                     }
-                                                     if(index>1)nxtcol=SIZE;
-                                                 }
-                                            }
-                                            if(index==1){
-                                                //printf("found triplet in row,col %d ,%d \n",row,uniquecol);
-                                                //only one other cell that contains same triplets
-                                                //remove other possible values from these two cells
-                                                //printf("yay found triplet in row,col %d ,%d\n",row,uniquecol);
-                                                //only one other cell that contains same triplets
-                                                //remove other possible values from these two cells
-
-                                                int i;
-                                                for(i=1;i<=SIZE;i++){
-                                                    if(i!=triplet1 && i!=triplet2 && i!=triplet3){
-                                                         possiblevalues[row][col][i]=false;  
-                                                         possiblevalues[row][uniquecol][i]=false;  
-                                                    }
-                                                    else{
-                                                        possiblevalues[row][col][i]=true;  
-                                                        possiblevalues[row][uniquecol][i]=true;  
-                                                    }
-                                                }
-                                            }
-                                     }
-                                 }
-                             }
-                      }
-                }
-      }
-      /*
-   printf("************************GRID AFTER triplets***********************\n");
+ 
+    /*
+    printf("************************GRID AFTER twins***********************\n");
     int i,j;
-    for (i=0;i<SIZE;i++){
+    for (i=0;i<SIZE;i++)
+    {
         for (j=0;j<SIZE;j++)
             printf("%d ",grid[i][j]);
         printf("\n");
     }
     printf("*********************************************************\n");
    */
+ 
+
+     
     return;
+
 }
 
 
@@ -780,10 +778,13 @@ void loneranger(int **grid){
     return;
 }
 
+
+//elimination for stack data structure
 int elimination(struct grid* curr)
 {
     
     int row,col;
+    //
     for( row = 0; row < SIZE ; row++){
         for ( col = 0 ; col < SIZE ; col++){
             if ( !(curr->assigned[row][col])){
@@ -808,20 +809,28 @@ int elimination(struct grid* curr)
     
     return 0;
 }
+
+//assign possible values of the stack data structure
 void init_possiblevalues(int **grid){
+    //we can run this in parallel as each inside function don't depend on the other
     #pragma omp parallel for
-    for (int row = 0; row < SIZE; row++){
-        for (int col = 0; col < SIZE; col++){
+    for (int row = 0; row < SIZE; row++)
+    {
+        for (int col = 0; col < SIZE; col++)
+        {
+            // initialise all the possible values to false
             for(int i=0;i<SIZE+1;i++)
             {
                     possiblevalues[row][col][i]=false;
             }
-            if(grid[row][col]!=UNASSIGNED)
+            // assign true to the assigned value
+            if(grid[row][col] != UNASSIGNED)
             {
                  possiblevalues[row][col][grid[row][col]]=true;
             }
             else
             {   
+                // for not assigned sub boxes check the isok function and then assign true to that
                 for (int num = 1; num <= SIZE; num++)
                 {
                         if(isok(grid,row,col,num))
@@ -833,14 +842,19 @@ void init_possiblevalues(int **grid){
         }
     }
 }
-void assign_possiblevalues(int value, struct grid* curr, int row, int col){
+
+// assign the possible value to that value in that row and column element
+void assign_possiblevalues(int value, struct grid* curr, int row, int col)
+{
+    // assign the values and it's other data structures
     curr->my_grid[row][col] = value;
     curr->assigned[row][col] = 1;
     curr->possiblevalues[row][col] = 0;
     int temp = ~(1 << ( value - 1));
     int ind;
-    
-    for (ind = 0 ; ind < SIZE ; ind++){
+    //now deleting the possible value at the index of row column 
+    for (ind = 0 ; ind < SIZE ; ind++)
+    {
 
         curr->possiblevalues[row][ind] &= temp;
         curr->possiblevalues[ind][col] &= temp;
@@ -851,6 +865,7 @@ void assign_possiblevalues(int value, struct grid* curr, int row, int col){
     for (myrow = 0; myrow < MINIGRIDSIZE; myrow++)
         for (mycol = 0; mycol < MINIGRIDSIZE; mycol++)
               curr->possiblevalues[myrow+boxStartRow][mycol+boxStartCol] &= temp;*/
+            //deleting the paticular  box possibilities
     int boxStartRow = (row/MINIGRIDSIZE) * MINIGRIDSIZE;
     int boxStartCol = (col/MINIGRIDSIZE) * MINIGRIDSIZE;
     int i,j;
@@ -868,11 +883,28 @@ int** solveSudoku(int **original_Grid)
         for (j=0;j<SIZE;j++)
             zerogrid[i][j] = 0;
     }
-    if(SIZE==9||SIZE==16||SIZE==25)
+    if(SIZE==9||SIZE==16 || SIZE==25)
     {
        init_possiblevalues(original_Grid);
        int x;
-         
+         /*
+     int update=true;
+      while(update)
+
+      {
+
+       if(elimination(grid)>0)   //If atleast one elimination is possible, then try for loneranger, twins, triplets  and check for eliminaiton
+        update=true;
+       else          //If no elimination is possible, then try for loneranger, twins, triplets and go out of loop
+        update=false;
+
+       loneranger(grid);
+       twins(grid);
+       //triplets(grid);
+
+      }
+
+          */
          
         for (bool isupdate=true;isupdate;isupdate= (x>0) ?true:false )
         {
@@ -890,7 +922,6 @@ int** solveSudoku(int **original_Grid)
                                 {
                                     loneranger(original_Grid);
                                     
-
                                 }
 
                                 #pragma omp section
@@ -899,7 +930,8 @@ int** solveSudoku(int **original_Grid)
                                     twins(original_Grid);
 
                                     
-                                }            
+                                } 
+
                 
                        }
                     }
@@ -908,18 +940,8 @@ int** solveSudoku(int **original_Grid)
 
             /* code */
         }
-/*
-          while(isupdate)  
-          {
 
-           if(eliminations(original_Grid)>0)
-            isupdate=true;
-           else 
-            isupdate=false;
-           loneranger(original_Grid);
-           twins(original_Grid);
-           //triplets(grid);
-          }*/
+          
      }
     solvedgrid = NULL;
     solved = false;
@@ -945,8 +967,9 @@ int** solveSudoku(int **original_Grid)
             num_threads = 1;
             #pragma omp parallel
             {
-            num_threads = omp_get_num_threads();           
+            num_threads = omp_get_num_threads();
             }
+            
             update=0;
 
             for(stack_sz=1;top!=NULL &&  stack_sz < num_threads;stack_sz--)
@@ -1002,7 +1025,8 @@ int** solveSudoku(int **original_Grid)
                             }
                         }
                         deletestack(curr);
-                }
+            }
+            
             if ( update == 0 && stack_sz == 0)
             {
                 return original_Grid;
