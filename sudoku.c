@@ -417,18 +417,7 @@ void twins(int **grid)
               }
         }
      }
-    /*
-    printf("************************GRID AFTER twins***********************\n");
-    int i,j;
-    for (i=0;i<SIZE;i++)
-    {
-        for (j=0;j<SIZE;j++)
-            printf("%d ",grid[i][j]);
-        printf("\n");
-    }
-    printf("*********************************************************\n");
-   */
-     
+
     return;
 }
 
